@@ -36,12 +36,25 @@ def retrieve(query, k=3):
     return "\n\n".join([chunks[i] for i in indices[0]])
 
 def groq_answer(query, context):
-    prompt = f"Use ONLY this context:\n\n{context}\n\nQuestion:\n{query}\n"
+    prompt = f"""You are a specialized AI assistant dedicated exclusively to the topic of Freelancing. 
+
+CRITICAL GUARDRAILS:
+1. Topic Check: If the user's question is NOT about freelancing, you must refuse to answer. Reply exactly with: "I can only answer questions related to freelancing."
+2. Source Hierarchy: 
+   - Check the provided context below first. If the answer is in the context, use it to answer.
+   - If the question IS about freelancing but the answer is NOT in the context, use your own knowledge to give a helpful answer about freelancing.
+
+Context:
+{context}
+
+Question:
+{query}
+"""
     
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2
+        temperature=0.2  # Low temperature keeps it accurate, but allows it to use general knowledge when needed
     )
     return response.choices[0].message.content
 
