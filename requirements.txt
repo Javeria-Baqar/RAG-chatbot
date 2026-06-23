@@ -1,0 +1,8 @@
+streamlit
+faiss-cpu
+numpy
+pymupdf
+sentence-transformers
+ollama
+groq
+requests
