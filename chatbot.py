@@ -1,94 +1,55 @@
 import faiss
 import pickle
 import numpy as np
-import ollama
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 
 # -----------------------------
-# LOAD MODELS
+# RESOURCE CACHING
 # -----------------------------
-embed_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+@st.cache_resource
+def load_resources():
+    # Caches the heavy embedding model download & index reading
+    embed_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    index = faiss.read_index("faiss_index/index.faiss")
+    with open("faiss_index/chunks.pkl", "rb") as f:
+        chunks = pickle.load(f)
+    return embed_model, index, chunks
 
-index = faiss.read_index("faiss_index/index.faiss")
-
-with open("faiss_index/chunks.pkl", "rb") as f:
-    chunks = pickle.load(f)
+embed_model, index, chunks = load_resources()
 
 # -----------------------------
-# GROQ CLIENT (FROM STREAMLIT SECRETS)
+# GROQ SETUP
 # -----------------------------
 groq_api_key = st.secrets["GROQ_API_KEY"]
 client = Groq(api_key=groq_api_key)
 
 # -----------------------------
-# RETRIEVE FUNCTION
+# LOGIC FUNCTIONS
 # -----------------------------
 def retrieve(query, k=3):
-
     q = embed_model.encode([query])
     q = np.array(q).astype("float32")
-
     faiss.normalize_L2(q)
-
     _, indices = index.search(q, k)
-
     return "\n\n".join([chunks[i] for i in indices[0]])
 
-# -----------------------------
-# OLLAMA ANSWER
-# -----------------------------
-def ollama_answer(query, context):
-
-    prompt = f"""
-Use ONLY this context:
-
-{context}
-
-Question:
-{query}
-"""
-
-    res = ollama.chat(
-        model="llama3",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return res["message"]["content"]
-
-# -----------------------------
-# GROQ FALLBACK
-# -----------------------------
 def groq_answer(query, context):
-
-    prompt = f"""
-Use ONLY this context:
-
-{context}
-
-Question:
-{query}
-"""
-
+    prompt = f"Use ONLY this context:\n\n{context}\n\nQuestion:\n{query}\n"
+    
     response = client.chat.completions.create(
         model="llama3-70b-8192",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2
     )
-
     return response.choices[0].message.content
 
-# -----------------------------
-# MAIN LOGIC
-# -----------------------------
-def ask_question(query):
-
-    context = retrieve(query)
-
-    answer = ollama_answer(query, context)
-
-    if "i don't know" in answer.lower() or len(answer) < 60:
+# This is the entry point your app.py calls!
+def generate_answer(query):
+    try:
+        context = retrieve(query)
         answer = groq_answer(query, context)
-
-    return answer
+        return answer
+    except Exception as e:
+        return f"Error generating response: {e}"
